@@ -109,6 +109,13 @@ local function reportThrow(id, what, err)
         :format(what, tostring(id), tostring(err)))
 end
 
+local function targetable(data, fresh)
+    if not data.target then return true end
+    local ok, result, point = pcall(data.target, fresh)
+    if not ok then reportThrow(data.id, 'target', result) end
+    return ok and result == true, point == true
+end
+
 --- The one removal path: every public remove funnels through here so the grid and registry agree.
 local function unregister(id)
     local data = registry[id]
@@ -394,6 +401,7 @@ function Interactions.register(data)
         -- Numbers go through tonumber so a satellite passing '2.0' cannot throw in the loop.
         heading   = tonumber(data.heading),   -- nil = billboard
         follow    = data.follow,
+        visual    = data.visual,
         pull      = tonumber(data.pull),   -- a follow may change it
         pullFixed = tonumber(data.pull),   -- what it goes back to when a follow says nothing
         centre      = data.centre == true, -- a follow may change it
@@ -429,6 +437,7 @@ function Interactions.register(data)
         group     = data.group or 'default',
         callback  = data.callback,
         condition = data.condition,
+        target    = data.target,
         -- Offered while downed / seated too (set from AddAction's `alive = false` or `vehicle = 'in'`).
         allowDowned = data.allowDowned == true,
         allowSeated = data.allowSeated == true,
@@ -876,6 +885,8 @@ end
 function Interactions.submitInput(text)
     local st = inputState
     if not st then return end
+    local data = registry[st.id]
+    if data and not targetable(data, true) then endInput(true) return end
     text = text or st.buffer
     -- false: no onCancel, this is the successful exit.
     endInput(false)
@@ -955,6 +966,7 @@ end
 function Interactions.fire(id, optionId)
     local data = registry[id]
     if not data then return false, 'no such prompt' end
+    if not targetable(data, true) then return false, 'point is not reachable' end
     local opt
     for _, o in ipairs(data.options or {}) do
         if optionId == nil or tostring(o.id) == tostring(optionId) then opt = o break end
@@ -1431,12 +1443,21 @@ CreateThread(function()
         end
 
         e.x, e.y, e.z = data.x, data.y, data.z
+        local shifted = false
+        if data.visual then
+            local ok, x, y, z = pcall(data.visual, data.x, data.y, data.z)
+            if not ok then reportThrow(data.id, 'visual', x)
+            elseif x then
+                e.x, e.y, e.z = x, y, z
+                shifted = x ~= data.x or y ~= data.y or z ~= data.z
+            end
+        end
         e.heading = data.heading
         e.tilt = data.tilt
         e.pull = data.pull
-        e.wrap = data.wrap
+        e.wrap = not shifted and data.wrap or nil
         e.centre = data.centre
-        e.fit = data.fit
+        e.fit = not shifted and data.fit or nil
         e.flashAt = data._flashAt
         e.flashR, e.flashG, e.flashB = data._flashR, data._flashG, data._flashB
         e.pressAt = data._pressAt
@@ -1492,6 +1513,7 @@ CreateThread(function()
     ---@param opt table|nil  its selected option
     ---@param cb function  the option's callback, else the prompt's
     local function fireSelected(data, opt, cb)
+        if not targetable(data, true) then return end
         -- Before the callback: opens the panel this interaction opened last time (client/inventory.lua).
         Inventory.notePanelTrigger(data.id)
 
@@ -1678,10 +1700,12 @@ CreateThread(function()
 
                 if score >= 0 then
                     local costCond = interactOpen and WhipCost.start() or nil
-                    -- The condition and the options' conditions, believed for CONDITION_MS (conditionsOk), shown or
-                    -- not. A prompt coming into reach has no answer that recent, so it is asked at once; one hidden by its
-                    -- condition (a locked car's doors) shows at most CONDITION_MS after the condition turns.
-                    local conditionOk = conditionsOk(data, now, freshConditions)
+                    -- Whether the point can be targeted is asked every pass (it follows the aim); the condition and
+                    -- the options' conditions are believed for CONDITION_MS (conditionsOk), shown or not. A prompt coming
+                    -- into reach has no answer that recent, so it is asked at once; one hidden by its condition (a locked
+                    -- car's doors) shows at most CONDITION_MS after the condition turns.
+                    local conditionOk, pointTarget = targetable(data)
+                    if conditionOk then conditionOk = conditionsOk(data, now, freshConditions) end
                     -- Counted under the prompt's owner.
                     if costCond then WhipCost.stop(conditionCostName(data._owner), costCond) end
 
@@ -1703,7 +1727,7 @@ CreateThread(function()
                                     local aim = (cfx * ax + cfy * ay + cfz * az) / alen
 
                                     local isNear = (data.focusMode == 'near')
-                                    local cone   = isNear and coneNear or coneAim
+                                    local cone   = pointTarget and -1.0 or (isNear and coneNear or coneAim)
                                     local w      = isNear and nearW or 0.0
 
                                     if aim >= cone then

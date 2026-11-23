@@ -49,6 +49,7 @@ shared_script 'shared/gta_weapon_models.lua'
 shared_script 'shared/weapon_catalog.lua'
 shared_script 'shared/tattoo_list.lua'
 shared_script 'shared/hair_fades.lua'
+shared_script 'shared/hair_decor.lua'
 shared_script 'shared/interact_spec.lua'
 shared_script 'shared/cam_math.lua'
 shared_script 'shared/cam_sequence.lua'
@@ -346,6 +347,7 @@ client_scripts {
     'client/director_spots.lua',
     -- After world_quad.lua.
     'client/director_talk.lua',
+    'client/prompt_offset.lua',
     -- Before atm.lua: it calls PropPrompts.define at file scope.
     'client/prop_prompts.lua',
     'client/atm.lua',
@@ -435,6 +437,7 @@ client_scripts {
     'tools/ov_move.lua',
     'tools/place_point.lua',   -- the settings page's Place (client/place_point.lua's PlacePoint)
     'tools/hand_edit.lua',
+    'tools/prompt_offset.lua',
     -- Before every tool that shows it.
     'tools/editor_hud.lua',
     -- Before the wizard, which calls it at runtime.

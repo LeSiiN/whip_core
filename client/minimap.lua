@@ -81,9 +81,7 @@ PlayerPrefs.define({
     help = 'How often the minimap is drawn while it moves. Higher is smoother and costs more; standing still costs nothing.',
     options = { { value = 120, label = '120' }, { value = 60, label = '60' }, { value = 45, label = '45' },
         { value = 30, label = '30' }, { value = 15, label = '15' } },
-    -- 30 by default: on the move every pose is a message to the page, so 60 sent one nearly every frame in a car
-    -- (/whipcost: the minimap's dearest part after the blip scan). A player who wants it smoother picks 60 or more.
-    default = 30,
+    default = 60,
     page = true, forced = server('fps'),
 })
 
@@ -181,10 +179,10 @@ PlayerPrefs.define({
     visible = function() return PlayerPrefs.get('mm.tiltWithSpeed') == true end,
 })
 
-local poseMs = 33               -- the pose, at most this often: 1000 / map.fps
+local poseMs = 16               -- the pose, at most this often: 1000 / map.fps
 
 local function readFps()
-    poseMs = math.floor(1000 / (tonumber(PlayerPrefs.get('map.fps')) or 30))
+    poseMs = math.floor(1000 / (tonumber(PlayerPrefs.get('map.fps')) or 60))
 end
 readFps()
 PlayerPrefs.onChange('map.fps', readFps)
@@ -260,9 +258,15 @@ end
 --- The sprites with no blip at the last look are looked at again over this many scans (a slice of them each scan), the
 --- sprites that had one on every scan. The full scan asked GTA about every sprite every DATA_MS (a thousand natives a
 --- scan, the minimap's dearest part in /whipcost); this asks about a third of them. A blip of a sprite already on the
---- map shows, moves and goes as before; one of a sprite not on the map yet shows within COLD_PASSES * DATA_MS.
+--- map shows, moves and goes as before; one of a sprite not on the map yet shows within COLD_PASSES * DATA_MS, or on the
+--- next pass when it is one of whip_core's own (MinimapRescan).
 local COLD_PASSES = 3
 local COLD_PER_PASS = math.ceil((MAX_SPRITE + 1) / COLD_PASSES)
+
+--- The next scan asks about every sprite again: whip_core's own blips ask for it as they are made (client/blips.lua), so
+--- a new one shows on the next pass rather than when its sprite's third comes round.
+local fullScanSoon = false
+function MinimapRescan() fullScanSoon = true end
 
 --- One sprite's blips, read into `arr` (that sprite's entries, reused and written over). Answers whether any changed.
 ---@param state table  the scan's own (see scanBlips)
@@ -354,7 +358,8 @@ local function scanBlips(alive, list, state)
         return true
     end
 
-    if not state.primed then
+    if not state.primed or fullScanSoon then
+        fullScanSoon = false
         for sprite = 0, MAX_SPRITE do
             if not one(sprite) then return nil end
         end
